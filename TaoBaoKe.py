@@ -14,6 +14,9 @@ import json
 
 from selenium.common.exceptions import NoSuchFrameException
 from selenium.webdriver import ActionChains
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
 
 class TaoBaoKe:
@@ -68,10 +71,22 @@ class TaoBaoKe:
             chrome_options.add_argument('--no-sandbox')
         chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
         chrome_options.add_experimental_option('useAutomationExtension', False)
-        chrome_options.add_argument('user-agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 11_2_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.90 Safari/537.36 SocketLog(tabid=1007&client_id=1)"')
-        self._driver = webdriver.Chrome(options=chrome_options)
-        self._driver.maximize_window()
-        # self._driver.set_window_rect(0, 0, 1792, 1120)
+        chrome_options.add_argument(
+            'user-agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 11_2_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.90 Safari/537.36 SocketLog(tabid=1007&client_id=1)"')
+        PROXY = "http://D37EPSERV96VT4W2:CERU56DAEB345HU90@proxy.abuyun.com:9020"
+        desired_capabilities = chrome_options.to_capabilities()
+        desired_capabilities['proxy'] = {
+            "httpProxy": PROXY,
+            "ftpProxy": PROXY,
+            "sslProxy": PROXY,
+            "noProxy": None,
+            "proxyType": "MANUAL",
+            "class": "org.openqa.selenium.Proxy",
+            "autodetect": False
+        }
+        self._driver = webdriver.Chrome(options=chrome_options, desired_capabilities=desired_capabilities)
+        # self._driver.maximize_window()
+        self._driver.set_window_rect(0, 0, 1792, 1120)
         self._driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
             "source": """
                 Object.defineProperty(navigator, 'webdriver', {
@@ -83,7 +98,7 @@ class TaoBaoKe:
     # 登录
     def login(self):
         self._driver.get(self.login_url)
-        time.sleep(3)
+        time.sleep(1)
 
         # 输入账号密码并点击登录
         loginId = self._driver.find_element_by_id('fm-login-id')
@@ -109,13 +124,32 @@ class TaoBaoKe:
         except NoSuchFrameException:
             print('登录不需要滑块验证')
 
-        time.sleep(2)
+        time.sleep(1)
         loginBtn = self._driver.find_element_by_class_name('password-login')
         loginBtn.click()
-        time.sleep(15)
+        time.sleep(2)
 
-        print(self._driver.current_url)
+        current_url = str(self._driver.current_url)
 
+        if re.search(r'login_unusual.htm', current_url):
+            iframe = self._driver.find_element_by_xpath('//iframe')
+            self._driver.switch_to.frame(iframe)
+            time.sleep(2)
+            html = self._driver.execute_script("return document.documentElement.outerHTML")
+            if re.search('点击获取验证码', html):
+                self._driver.find_element_by_id('J_GetCode').click()
+                while True:
+                    print('请输入六位数验证码：')
+                    code = input()
+                    self._driver.find_element_by_id('J_Checkcode').send_keys(code)
+                    self._driver.find_element_by_id('btn-submit').click()
+                    time.sleep(1.5)
+                    html = self._driver.execute_script("return document.documentElement.outerHTML")
+                    if re.search('校验码格式不正确', html):
+                        continue
+                    break
+
+        # 校验通过登录成功
         self._set_cookie()
         local_headers = self._build_headers()
         res = requests.get(self.check_login_url, headers=local_headers, timeout=5)
